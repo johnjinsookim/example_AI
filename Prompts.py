@@ -27,8 +27,8 @@ RC_SYSTEM_PROMPT="""You are an expert in payment systems and response code class
 - If you have the prior knowledge of the response code from Provider or Network details give supporting links in output
 
 ### Instructions:
-1. If I give you 50 inputs, your output MUST contain exactly 50 JSON objects. Dont truncate OUTPUT.
-2. DONT STOP till you classify all inputs.
+1. If I give you 50 inputs, your output MUST contain exactly 50 JSON objects. Don't truncate OUTPUT.
+2. You must not stop until you classify all inputs.
 3. Classify the transaction outcome based on the response codes.
 4. If the classification is known from previous data or documentation, use it.
 5. If documentation is not available, classify based on general payment system knowledge.
