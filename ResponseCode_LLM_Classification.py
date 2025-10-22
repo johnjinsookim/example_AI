@@ -149,21 +149,6 @@ def df_to_json_batches(df, batch_size=10):
         json_batches.append(batch_json)
     return json_batches
 
-
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC
-# MAGIC --select  ProviderName,PaymentNetworkName,ResponseCodeFromProvider,ResponseCodeFromNetwork,count(1) from delta.`abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_input` group by all having count(1)>1
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC
-# MAGIC --select  ProviderName,PaymentNetworkName,ResponseCodeFromProvider,ResponseCodeFromNetwork,ResponseCodeDetails from delta.`abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_input`  where ProviderName='BillDesk' and PaymentNetworkName='MASTERCARD' and ResponseCodeFromProvider='TRPPE0008:Internal error'
-# MAGIC
-
 # COMMAND ----------
 
 def call_Classfier(SYSTEM_PROMPT,user_message,model):
@@ -300,14 +285,7 @@ for i in range(0, len(json_batches)):
 
 # COMMAND ----------
 
-print(clean_output)
-
-# COMMAND ----------
-
-# MAGIC
-# MAGIC %sql
-# MAGIC
-# MAGIC --select * from delta.`abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output` where providername='Worldpay' limit 1--and PaymentNetworkName='VISA' 
+print(clean_output) 
 
 # COMMAND ----------
 
