@@ -33,8 +33,9 @@ from sklearn.metrics import confusion_matrix
 from pyspark.sql.functions import row_number
 from pyspark.sql.window import Window
 
-classification_input_path = "abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_input"
-classification_output_path = "abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output"
+#Insert paths to data lake
+classification_input_path = "" 
+classification_output_path = ""
 
 df_lables = spark.read.format("delta").load(classification_input_path).fillna("NA")
 df_llm_output = spark.read.format("delta").load(classification_output_path).fillna("NA")
@@ -76,7 +77,7 @@ from itertools import chain
 
 mapping_expr = F.create_map([lit(x) for x in chain(*NormalizedResponseCode_Mapping.items())])
 
-df_llm_output = df_llm_output.withColumn(    "classification_responsecode",    mapping_expr.getItem(col("classification")))
+df_llm_output = df_llm_output.withColumn("classification_responsecode", mapping_expr.getItem(col("classification")))
 df_llm_output.display()
 
 # COMMAND ----------
@@ -89,6 +90,7 @@ df_join = df_llm_output.join(df_lables, join_columns, 'inner').fillna("Unknown")
 
 
 # COMMAND ----------
+"""We replaced confidence score with a scale from 1-3 since scores introduce false precision"""
 
 # MAGIC %md
 # MAGIC # precision: Of all the predictions the model made for a given class, how many were correct?
@@ -140,9 +142,3 @@ df_join.filter(col("classification_responsecode")!=col("ResponseCode")) \
 
 df_join = df_join.filter( ~(col("responsecodedetails").isin('Other - Uncategorized','Other - Unknown')) )
 df_join.filter(col("classification_responsecode")!=col("ResponseCode")).groupBy("confidence_score").count().display()
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC
-# MAGIC desc formatted gold.transactions_with_fees --delta.`abfss://main@paydatalaketest.core.windows.net/gold/CoP/transactions_with_fees`
