@@ -25,25 +25,25 @@ from Common.DeltaTableHelper import *
 from Prompts import *
 
 # COMMAND ----------
-
 !pip install openai
 !pip install azure.identity
 
 # COMMAND ----------
-
 # Databricks widgets for model selection and iteration input
 dbutils.widgets.dropdown("model", "GPT5", ["GPT5", "GPT4o"], "Select Model")
 dbutils.widgets.text("iteration", "2", "Iteration (int)")
+dbutils.widgets.text("batch_size", "10", "Iteration (int)")
 
 # Retrieve widget values
 model = dbutils.widgets.get("model") #2 and above
-itration = int(dbutils.widgets.get("iteration"))
-itration = itration
-print(model,itration)
+itn = int(dbutils.widgets.get("iteration"))
+batch_size = int(dbutils.widgets.get("batch_size"))
+
+itn = itn
+print(model,itn,batch_size)
 
 
 # COMMAND ----------
-
 import json
 import pandas as pd
 import numpy as np
@@ -51,11 +51,10 @@ from pyspark.sql.types import StructType, StructField, StringType, IntegerType, 
 
 
 # COMMAND ----------
-
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DecimalType, DateType
 
 schema = StructType([
-    StructField("itration", IntegerType(), True),
+    StructField("iteration", IntegerType(), True),
     StructField("id", StringType(), True),
     StructField("model", StringType(), True),
     StructField("created", IntegerType(), True),
@@ -73,8 +72,6 @@ schema = StructType([
 ])
 
 # COMMAND ----------
-
-
 import os
 import base64
 from openai import AzureOpenAI
@@ -92,7 +89,7 @@ if model == "GPT4o":
 
     SYSTEM_PROMPT=GPT4o_SYS_PROMPT #system prompt
     input_output_sample=GPT4o_RC_input_output_sample #user prompts
-elif model == "GPT5": #pdp-test-ai-service-9
+elif model == "GPT5":
     endpoint = os.getenv("ENDPOINT_URL", "https://pdp-test-ai-service-9.openai.azure.com/")
     deployment = os.getenv("DEPLOYMENT_NAME", "gpt-5")
     subscription_key = os.getenv("AZURE_OPENAI_API_KEY",dbutils.secrets.get(scope='key-vault-secret', key='AZUREOPENAIAPIKEYGPT5'))
@@ -104,16 +101,8 @@ elif model == "GPT5": #pdp-test-ai-service-9
     input_output_sample=GPT5_RC_input_output_sample #user prompts
 
 # COMMAND ----------
-
-print(SYSTEM_PROMPT,input_output_sample)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ####llm_input_df will be the input to the model. This frame will be chuncked such that 10 records will be included as input into the model
-# MAGIC Put filters on this dataframe to test with sample data
-
-# COMMAND ----------
+# Llm_input_df will be the input to the model. This frame will be chuncked such that 10 records will be included as input into the model
+# Put filters on this dataframe to test with sample data
 
 from pyspark.sql.functions import col
 
@@ -126,14 +115,18 @@ input_cols = ["PaymentNetworkName", "ProviderName", "ResponseCodeFromNetwork", "
 output_cols = ["PaymentNetworkName", "ProviderName", "ResponseCodeFromNetwork", "ResponseCodeFromProvider"]
 
 # Perform anti-join to find rows in input_df not present in output_df
-llm_input_df = input_df.select(input_cols).subtract(output_df.select(output_cols)).orderBy( lower(col("ProviderName")).desc() ,col("ResponseCodeFromProvider").desc()).filter(col("ProviderName") != lit("Unknown")  ).filter(col("ResponseCodeFromProvider") != lit("NA")  ).filter(col("PaymentNetworkName") != lit("Unknown")).limit(10)
+## Change filters to change LLM inputs
+llm_input_df = input_df.select(input_cols).subtract(output_df.select(output_cols))
+    .orderBy( lower(col("ProviderName")).desc() 
+    ,col("ResponseCodeFromProvider").desc())
+    .filter(col("ProviderName") != lit("Unknown"))
+    .filter(col("ResponseCodeFromProvider") != lit("NA"))
+    .filter(col("PaymentNetworkName") != lit("Unknown"))
+    .filter(col("ProviderName")==lit("PayU")).limit(10)
 
-
+print(SYSTEM_PROMPT,input_output_sample)
 display(llm_input_df)
 
-# COMMAND ----------
-
-llm_input_df.count()
 
 # COMMAND ----------
 
@@ -184,7 +177,7 @@ def call_Classfier(SYSTEM_PROMPT,user_message,model):
 
 
 # COMMAND ----------
-
+# Compute cost of token usage
 def compute_gpt4o_cost(prompt_tokens, completion_tokens):
     # Pricing (per 1K tokens)
     input_rate = 0.0025  # $ per 1K input tokens
@@ -200,17 +193,13 @@ def compute_gpt4o_cost(prompt_tokens, completion_tokens):
         "total_cost_usd": decimal.Decimal(np.round(total_cost, 4))
     }
 
+
 # COMMAND ----------
-
-
 def clean_ClassificationOutput(raw_output):
     return re.sub(r"json|```", "", raw_output).strip()
 
 
-
 # COMMAND ----------
-
-
 def parse_ClassificationOutput(str):
     data = json.loads(clean_output)
     records = []
@@ -230,7 +219,7 @@ def parse_ClassificationOutput(str):
         records.append(flat)
 
     df = spark.createDataFrame(records)
-    display(df)
+    #display(df)
     return df
 
 # COMMAND ----------
@@ -242,9 +231,8 @@ def parse_ClassificationOutput(str):
     #dbutils.fs.rm("abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output_metadata", recurse=True)
 
 # COMMAND ----------
-
 # Convert llm_input_df to JSON batches
-json_batches = df_to_json_batches(llm_input_df)
+json_batches = df_to_json_batches(llm_input_df,batch_size)
 
 for i in range(0, len(json_batches)):
     input_data=str(json_batches[i]).replace("['","").replace("']","").replace("', '",",\n").replace("']","").replace('","','",\n"')
@@ -253,7 +241,7 @@ for i in range(0, len(json_batches)):
     completion=call_Classfier(SYSTEM_PROMPT,user_message,model)
     #print(input_data)
     metadata = {
-        "itration":itration,
+        "iteration":itration,
         "id": completion.id,
         "model": completion.model,
         "created": completion.created,
@@ -275,22 +263,21 @@ for i in range(0, len(json_batches)):
     raw_output = completion.choices[0].message.content
     clean_output = clean_ClassificationOutput(raw_output)
     #print(clean_output)
-    df = parse_ClassificationOutput(clean_output).withColumn("itration",lit(itration))
+    try:
+        df = parse_ClassificationOutput(clean_output).withColumn("iteration",lit(itration))
+    except:
+        print("Error parsing output")
+        print(clean_output)
+        continue
     keys=metadata.keys()
     values=metadata.values()
     metadata_df = spark.createDataFrame([metadata], schema)
-    #df.write.format("delta").mode("append").save("abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output")
-    #metadata_df.write.format("delta").mode("append").save("abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output_metadata")
-
-
-# COMMAND ----------
+    metadata_df.write.format("delta").mode("append").save("abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output_metadata")
+    if df.count()==batch_size:
+        df.write.format("delta").mode("append").save("abfss://main@paydatalaketest.dfs.core.windows.net/silver/DataClassification/classification_output")
+    else:
+        print("Model Output truncated truncated the Input!!!!")
+        exit(1)
 
 print(clean_output) 
-
-# COMMAND ----------
-
-metadata_df.display()
-
-# COMMAND ----------
-
 df.display()
